@@ -1,0 +1,6 @@
+langchain
+langgraph
+langchain_community
+langchain-ollama
+psycopg2-binary
+streamlit
