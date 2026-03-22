@@ -1,6 +1,10 @@
 langchain
 langgraph
-langchain_community
+langchain-core
+langchain-community
 langchain-ollama
 psycopg2-binary
 streamlit
+streamlit-authenticator
+python-dotenv
+plotly
