@@ -6,6 +6,12 @@ from graph import build_graph
 
 st.title("🐘 Agente de Análise de Dados")
 
+with st.sidebar:
+    if st.session_state.get("auth"):
+        if st.button("Sair", type="secondary", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+
 # ── Conexão com o banco e grafo (cacheados) ──────────────────────────────
 
 @st.cache_resource

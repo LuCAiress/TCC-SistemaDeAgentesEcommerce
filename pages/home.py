@@ -1,6 +1,12 @@
 import streamlit as st
 
-st.title("🤖 TCC — Sistema de Agentes para Análise de Negócios")
+with st.sidebar:
+    if st.session_state.get("auth"):
+        if st.button("Sair", type="secondary", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+
+st.title("TCC — Sistema de Agentes para Análise de Negócios")
 st.markdown("---")
 
 st.markdown(
@@ -11,46 +17,23 @@ st.markdown(
     """
 )
 
-# ── Arquitetura do sistema ───────────────────────────────────────────────
-
 st.subheader("🏗️ Arquitetura do Sistema")
 
 st.markdown(
     """
     O sistema utiliza um **StateGraph** (LangGraph) com 5 nós especializados:
 
-    ```
-    ┌─────────────────┐
-    │   Classificar    │  ← Identifica a intenção do usuário
-    │   Intenção       │    (consulta / visualização / insight)
-    └────────┬────────┘
-             │
-    ┌────────▼────────┐
-    │   Gerar SQL      │  ← LLM gera a query PostgreSQL
-    └────────┬────────┘
-             │
-    ┌────────▼────────┐
-    │  Executar SQL    │  ← Executa no banco (read-only)
-    └────────┬────────┘
-             │
-    ┌────────▼────────┐
-    │    Analisar      │  ← LLM interpreta os dados
-    │   Resultados     │    (análise simples ou insight de negócio)
-    └────────┬────────┘
-             │
-        ┌────┴────┐
-        ▼         ▼
-    [  FIM  ]  ┌──────────┐
-               │ Gerar     │  ← Se o usuário pediu gráfico
-               │ Gráfico   │    (Plotly chart)
-               └─────┬────┘
-                     ▼
-                 [  FIM  ]
-    ```
     """
 )
 
-# ── Tecnologias ──────────────────────────────────────────────────────────
+col_left, col_center, col_right = st.columns([1, 2, 1])
+with col_center:
+    st.image(
+        "images/Intenção Classificação to-2026-03-22-194622.png",
+        caption="Arquitetura do grafo de intenção e geração de insights",
+        width=300,
+    )
+
 
 st.subheader("🛠️ Tecnologias Utilizadas")
 
@@ -85,8 +68,6 @@ with col3:
         - Chat interativo
         """
     )
-
-# ── Navegação ────────────────────────────────────────────────────────────
 
 st.markdown("---")
 st.subheader("📌 Páginas")
