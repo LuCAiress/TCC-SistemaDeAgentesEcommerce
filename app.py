@@ -6,7 +6,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.logo("images/logoCEUB.png", size="large")
 
 st.markdown(
     """
@@ -24,6 +23,24 @@ st.markdown(
 
 if "auth" not in st.session_state:
     st.session_state["auth"] = False
+
+if "theme" not in st.session_state:
+    st.session_state["theme"] = st.context.theme.type
+
+# Verificar se o tema mudou a cada segundo para atualizar o logo dinamicamente
+@st.fragment(run_every=1)
+def _watch_theme():
+    current = st.context.theme.type
+    if current != st.session_state["theme"]:
+        st.session_state["theme"] = current
+        st.rerun(scope="app")
+
+_watch_theme()
+
+if st.session_state["theme"] == "dark":
+    st.logo("TCC-SistemaDeAgentesEcommerce\images\logoCEUBDark.png", size="large")
+else:
+    st.logo("TCC-SistemaDeAgentesEcommerce\images\logoCEUBLight.png", size="large")
 
 home = st.Page("pages/home.py", title="Home", icon="🏠", default=True)
 postgres = st.Page("pages/agente_analise.py", title="Agente de Análise", icon="🐘")

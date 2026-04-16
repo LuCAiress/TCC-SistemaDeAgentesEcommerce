@@ -111,5 +111,14 @@ CREATE TABLE IF NOT EXISTS order_items (
 	CONSTRAINT fk_sellers FOREIGN KEY (seller_id) REFERENCES sellers(seller_id)
 );
 COPY order_items FROM 'olist_order_items_dataset.csv' HEADER CSV DELIMITER ',';
-----------------------------------------------------------------------------------------------------------------------------------
 
+-----------------------------------------------------------------------------------------------------------------------------------------
+-- Create table users
+DROP TABLE IF EXISTS users;
+CREATE TABLE IF NOT EXISTS users (
+	user_id SERIAL PRIMARY KEY,
+	email TEXT UNIQUE NOT NULL,
+	password TEXT NOT NULL
+);
+
+-----------------------------------------------------------------------------------------------------------------------------------------

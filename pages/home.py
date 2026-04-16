@@ -29,7 +29,7 @@ st.markdown(
 col_left, col_center, col_right = st.columns([1, 2, 1])
 with col_center:
     st.image(
-        "images/Intenção Classificação to-2026-03-22-194622.png",
+        "TCC-SistemaDeAgentesEcommerce\images\Intenção Classificação to-2026-03-22-194622.png",
         caption="Arquitetura do grafo de intenção e geração de insights",
         width=300,
     )
