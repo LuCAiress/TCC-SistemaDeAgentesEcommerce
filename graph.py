@@ -38,7 +38,7 @@ def build_graph(db=None):
     if db is None:
         db = get_db()
 
-    schema_info = get_schema(db)
+    # schema_info = get_schema(db)
     model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     llm = ChatOllama(model=model, temperature=0.0, reasoning=False)
 
@@ -58,7 +58,7 @@ def build_graph(db=None):
 
     def gerar_sql(state: AgentState) -> dict:
         response = llm.invoke([
-            SystemMessage(content=build_sql_system_prompt(schema_info)),
+            SystemMessage(content=build_sql_system_prompt()),
             HumanMessage(content=state["user_message"]),
         ])
         sql = strip_codeblock(response.content)

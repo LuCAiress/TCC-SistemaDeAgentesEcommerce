@@ -11,6 +11,15 @@ with st.sidebar:
         if st.button("Sair", type="secondary", use_container_width=True):
             st.session_state.clear()
             st.rerun()
+            
+# ── Função para construir histórico ──────────────────────────────────────
+
+def build_chat_history(messages, limit=5):
+    history = ""
+    for msg in messages[-limit:]:
+        role = "Usuário" if msg["role"] == "user" else "Assistente"
+        history += f"{role}: {msg['content']}\n"
+    return history
 
 # ── Conexão com o banco e grafo (cacheados) ──────────────────────────────
 
@@ -56,13 +65,25 @@ for msg in st.session_state.pg_messages:
 
 if user_query := st.chat_input("Faça uma pergunta sobre o banco de dados"):
     st.session_state.pg_messages.append({"role": "user", "content": user_query})
+
     with st.chat_message("user", avatar="🧑‍💻"):
         st.markdown(user_query)
 
     with st.chat_message("assistant", avatar="🐘"):
         with st.spinner("Analisando sua pergunta..."):
+
+            history = build_chat_history(st.session_state.pg_messages)
+
+            full_prompt = f"""
+Histórico da conversa:
+{history}
+
+Pergunta atual:
+{user_query}
+"""
+
             result = agent.invoke({
-                "user_message": user_query,
+                "user_message": full_prompt,
                 "intent": "",
                 "sql_query": "",
                 "sql_result": "",
@@ -72,22 +93,3 @@ if user_query := st.chat_input("Faça uma pergunta sobre o banco de dados"):
             })
 
         st.markdown(result["final_response"])
-
-        chart_spec = result.get("chart_spec", "")
-        if chart_spec:
-            try:
-                fig = go.Figure(json.loads(chart_spec))
-                st.plotly_chart(fig, use_container_width=True)
-            except Exception:
-                pass
-
-        if result.get("sql_query"):
-            with st.expander("🔍 SQL executada"):
-                st.code(result["sql_query"], language="sql")
-
-    msg_data = {"role": "assistant", "content": result["final_response"]}
-    if chart_spec:
-        msg_data["chart_spec"] = chart_spec
-    if result.get("sql_query"):
-        msg_data["sql_query"] = result["sql_query"]
-    st.session_state.pg_messages.append(msg_data)

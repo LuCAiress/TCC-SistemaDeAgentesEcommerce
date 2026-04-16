@@ -1,3 +1,121 @@
+schema_info = f"""TABELAS E COLUNAS:
+
+Tabela: olist.customers
+- customer_id: identificador único do cliente
+- customer_unique_id: identificador único global do cliente
+- zip_code_prefix: prefixo do CEP
+- city: cidade do cliente
+- state: estado do cliente
+
+Tabela: olist.orders
+- order_id: identificador do pedido
+- customer_id: id do cliente
+- status: status do pedido (delivered, shipped, etc)
+- purchase_timestamp: data da compra
+- approval_timestamp: data de aprovação do pedido
+- delivered_carrier_date: data de envio ao transportador
+- delivered_customer_date: data de entrega ao cliente
+- estimated_delivery_date: data estimada de entrega
+
+Tabela: olist.order_payments
+- order_id: id do pedido
+- payment_sequential: sequência do pagamento
+- payment_type: tipo de pagamento (credit_card, boleto, voucher, etc)
+- payment_installments: número de parcelas
+- payment_value: valor pago
+
+Tabela: olist.order_items
+- order_id: id do pedido
+- item_id: número do item no pedido
+- product_id: id do produto
+- seller_id: id do vendedor
+- shipping_limit_date: data limite de envio
+- price: preço do produto
+- freight_value: valor do frete
+
+Tabela: olist.products
+- product_id: id do produto
+- product_category: categoria do produto
+- name_length: tamanho do nome
+- description_length: tamanho da descrição
+- photos_quantity: quantidade de fotos
+- weight_g: peso em gramas
+- length_cm: comprimento
+- height_cm: altura
+- width_cm: largura
+
+Tabela: olist.sellers
+- seller_id: identificador do vendedor
+- zip_code_prefix: prefixo do CEP
+- city: cidade do vendedor
+- state: estado do vendedor
+
+Tabela: olist.order_reviews
+- review_id: id da avaliação
+- order_id: id do pedido
+- rating: nota da avaliação (1 a 5)
+- review_title: título da avaliação
+- review_content: conteúdo da avaliação
+- creation_timestamp: data de criação
+- answer_timestamp: data de resposta
+
+Tabela: olist.geolocation
+- zip_code_prefix: prefixo do CEP
+- latitude: latitude
+- longitude: longitude
+- city: cidade
+- state: estado
+
+
+RELACIONAMENTOS ENTRE TABELAS:
+
+- olist.orders.customer_id = olist.customers.customer_id
+  → pedidos pertencem a clientes
+
+- olist.order_payments.order_id = olist.orders.order_id
+  → pagamentos estão ligados a pedidos
+
+- olist.order_reviews.order_id = olist.orders.order_id
+  → avaliações estão ligadas a pedidos
+
+- olist.order_items.order_id = olist.orders.order_id
+  → itens pertencem a pedidos
+
+- olist.order_items.product_id = olist.products.product_id
+  → itens possuem produtos
+
+- olist.order_items.seller_id = olist.sellers.seller_id
+  → itens possuem vendedores
+
+- olist.customers.zip_code_prefix = olist.geolocation.zip_code_prefix
+  → localização do cliente
+
+- olist.sellers.zip_code_prefix = olist.geolocation.zip_code_prefix
+  → localização do vendedor
+
+
+REGRAS DE NEGÓCIO E USO:
+
+- Para calcular vendas → usar order_payments.payment_value
+- Para dados de tempo → usar orders.purchase_timestamp
+- Para análise por cliente → usar customers
+- Para análise por produto → usar order_items + products
+- Para análise por vendedor → usar sellers
+- Para localização → usar customers ou sellers + geolocation
+
+- Sempre que envolver tempo (mensal, anual, tendência):
+  → usar DATE_TRUNC('month', orders.purchase_timestamp)
+
+- Sempre que a pergunta contiver "por":
+  → usar GROUP BY
+
+- Para métricas:
+  - total → SUM()
+  - média → AVG()
+  - quantidade → COUNT()
+
+- Sempre ordenar resultados temporais com ORDER BY"""
+
 def get_intent_classification_system() -> str:
 	return (
 		"Classifique a intenção do usuário em EXATAMENTE uma categoria:\n"
@@ -8,15 +126,19 @@ def get_intent_classification_system() -> str:
 	)
 
 
-def build_sql_system_prompt(schema_info: str) -> str:
-	return (
-		"Você é um especialista em SQL PostgreSQL.\n"
-		"Gere APENAS a query SQL (sem explicação) para responder à pergunta.\n"
-		"Use apenas SELECT (read-only). Nunca use DELETE, UPDATE, INSERT, DROP.\n\n"
-  		"O schema das tabelas é o olist. Exemplo: olist.orders, olist.customers, etc.\n"
-		f"Schema do banco:\n{schema_info}"
-	)
+def build_sql_system_prompt() -> str:
+    return f"""
+		Você é um especialista em SQL PostgreSQL.
 
+		Gere APENAS a query SQL correta.
+
+		REGRAS:
+		- Apenas SELECT
+		- Use o schema olist
+		- Use as regras e relacionamentos abaixo
+
+		{schema_info}
+"""
 
 def get_analysis_insight_system() -> str:
 	return (
