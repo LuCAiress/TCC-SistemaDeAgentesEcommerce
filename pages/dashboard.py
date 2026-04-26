@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from utils import logout
 
 load_dotenv()
 
@@ -34,11 +35,9 @@ def _template():
 
 # ── Sidebar ──────────────────────────────────────────────────────
 
+
 with st.sidebar:
-    if st.session_state.get("auth"):
-        if st.button("Sair", type="secondary", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
+    logout()
 
     category_filter = st.selectbox(
         "Filtrar por Categoria",

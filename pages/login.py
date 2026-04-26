@@ -1,8 +1,10 @@
 import os
 
 import streamlit as st
+import bcrypt
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from utils import get_cookie_controller
 
 load_dotenv()
 
@@ -70,13 +72,14 @@ def autenticar_usuario(username: str, password: str):
 		row = conn.execute(query, {"username": username}).mappings().first()
 
 	if not row:
-		return False, "Usuário não encontrado."
+		return False, "Usuário ou senha inválida."
 
 	dados = dict(row)
-	if str(dados.get("senha", "")) != str(password):
+	hashed_from_db = dados["senha"].encode("utf-8")
+
+	if not bcrypt.checkpw(password.encode("utf-8"), hashed_from_db):
 		return False, "Senha inválida."
 
-	st.session_state["user_id"] = dados.get("id")
 	st.session_state["user_name"] = dados.get("username") or username
 	st.session_state["user_role"] = dados.get("role")
 	return True, ""
@@ -98,6 +101,9 @@ else:
 		else:
 			ok, msg = autenticar_usuario(username.strip(), password)
 			if ok:
+				controller = get_cookie_controller()
+				controller.set("auth_user", st.session_state["user_name"], max_age=86400 * 7)
+				controller.set("auth_role", st.session_state.get("user_role", ""), max_age=86400 * 7)
 				st.session_state["auth"] = True
 				st.success("Login realizado com sucesso.")
 				st.rerun()

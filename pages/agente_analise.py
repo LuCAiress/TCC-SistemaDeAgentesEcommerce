@@ -3,14 +3,12 @@ import json
 import plotly.graph_objects as go
 from tools import get_db
 from graph import build_graph
+from utils import logout
 
 st.title("🐘 Agente de Análise de Dados")
 
 with st.sidebar:
-    if st.session_state.get("auth"):
-        if st.button("Sair", type="secondary", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
+    logout()
             
 # ── Função para construir histórico ──────────────────────────────────────
 

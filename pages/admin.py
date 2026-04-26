@@ -1,18 +1,17 @@
 import os
 
 import streamlit as st
+import bcrypt
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from utils import logout
 
 load_dotenv()
 
 # ── Sidebar ──────────────────────────────────────────────────────
 
 with st.sidebar:
-    if st.session_state.get("auth"):
-        if st.button("Sair", type="secondary", use_container_width=True):
-            st.session_state.clear()
-            st.rerun()
+    logout()
 
 # ── Conexão ──────────────────────────────────────────────────────
 
@@ -36,7 +35,7 @@ def cadastrar_usuario(email: str, password: str, role: str) -> tuple[bool, str]:
         with engine.begin() as conn:
             conn.execute(
                 text("INSERT INTO users (email, password, role) VALUES (:email, :password, :role)"),
-                {"email": email, "password": password, "role": role},
+                {"email": email, "password": bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"), "role": role},
             )
         return True, ""
     except Exception as e:

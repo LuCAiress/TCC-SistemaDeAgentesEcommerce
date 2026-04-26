@@ -1,4 +1,5 @@
 import streamlit as st
+from utils import get_cookie_controller
 
 st.set_page_config(
     page_title="TCC - Agentes de Análise de Negócios",
@@ -21,8 +22,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+controller = get_cookie_controller()
+
 if "auth" not in st.session_state:
-    st.session_state["auth"] = False
+    token = controller.get("auth_user")
+    role = controller.get("auth_role")
+    if token:
+        st.session_state["auth"] = True
+        st.session_state["user_name"] = token
+        st.session_state["user_role"] = role
+    else:
+        st.session_state["auth"] = False
 
 if "theme" not in st.session_state:
     st.session_state["theme"] = st.context.theme.type
@@ -38,9 +48,9 @@ def _watch_theme():
 _watch_theme()
 
 if st.session_state["theme"] == "dark":
-    st.logo("TCC-SistemaDeAgentesEcommerce\images\logoCEUBDark.png", size="large")
+    st.logo("images\logoCEUBDark.png", size="large")
 else:
-    st.logo("TCC-SistemaDeAgentesEcommerce\images\logoCEUBLight.png", size="large")
+    st.logo("images\logoCEUBLight.png", size="large")
 
 home = st.Page("pages/home.py", title="Home", icon="🏠", default=True)
 postgres = st.Page("pages/agente_analise.py", title="Agente de Análise", icon="🐘")
