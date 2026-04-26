@@ -118,7 +118,9 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE IF NOT EXISTS users (
 	user_id SERIAL PRIMARY KEY,
 	email TEXT UNIQUE NOT NULL,
-	password TEXT NOT NULL
+	role TEXT UNIQUE NOT NULL,
+	password TEXT NOT NULL,
+	CONSTRAINT chk_role CHECK (role IN ('admin', 'user'));
 );
 
 -----------------------------------------------------------------------------------------------------------------------------------------

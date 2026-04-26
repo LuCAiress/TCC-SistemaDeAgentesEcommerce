@@ -43,6 +43,7 @@ def get_auth_table_config():
 	table = os.getenv("AUTH_TABLE", "usuarios")
 	user_field = os.getenv("AUTH_USER_FIELD", "email")
 	password_field = os.getenv("AUTH_PASSWORD_FIELD", "senha")
+	role_field = os.getenv("AUTH_ROLE_FIELD", "cargo")
 
 	# Tabela pode ter schema: ex.: public.users ou auth.users
 	if not table.replace("_", "").replace(".", "").isalnum():
@@ -54,14 +55,14 @@ def get_auth_table_config():
 			st.error("Configuração de autenticação inválida. Verifique AUTH_USER_FIELD e AUTH_PASSWORD_FIELD no .env.")
 			st.stop()
 
-	return schema, table, user_field, password_field
+	return schema, table, user_field, password_field, role_field
 
 
 def autenticar_usuario(username: str, password: str):
-	schema, table, user_field, password_field = get_auth_table_config()
+	schema, table, user_field, password_field, role_field = get_auth_table_config()
 
 	query = text(
-		f"SELECT id, {user_field} AS username, {password_field} AS senha "
+		f"SELECT user_id, {user_field} AS username, {password_field} AS senha, {role_field} AS role "
 		f"FROM {schema}.{table} WHERE {user_field} = :username LIMIT 1"
 	)
 
@@ -77,6 +78,7 @@ def autenticar_usuario(username: str, password: str):
 
 	st.session_state["user_id"] = dados.get("id")
 	st.session_state["user_name"] = dados.get("username") or username
+	st.session_state["user_role"] = dados.get("role")
 	return True, ""
 
 

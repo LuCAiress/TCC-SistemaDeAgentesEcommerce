@@ -47,9 +47,13 @@ postgres = st.Page("pages/agente_analise.py", title="Agente de Análise", icon="
 sql_console = st.Page("pages/pagina_consulta.py", title="Console SQL", icon="📊")
 dashboard = st.Page("pages/dashboard.py", title="Dashboard", icon="📈")
 login_page = st.Page("pages/login.py", title="Login", icon="🔐", default=not st.session_state["auth"])
+registration_page = st.Page("pages/admin.py", title="Admin", icon="🛠️")
 
 if st.session_state["auth"]:
-    pages = [home, postgres, sql_console, dashboard]
+    if st.session_state.get("user_role") == "admin":
+        pages = [home, postgres, sql_console, dashboard, registration_page]
+    else:
+        pages = [home, postgres, sql_console, dashboard]
 else:
     pages = [login_page]
 
