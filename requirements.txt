@@ -6,7 +6,6 @@ langchain-community
 langchain-ollama
 psycopg2-binary
 streamlit
-streamlit-authenticator
 streamlit-cookies-controller
 python-dotenv
 plotly

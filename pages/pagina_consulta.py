@@ -8,8 +8,6 @@ from utils import logout
 
 load_dotenv()
 
-with st.sidebar:
-    logout()
 
 st.title("📊 Console SQL (read-only)")
 st.markdown("---")
@@ -35,6 +33,29 @@ def get_engine():
 engine = get_engine()
 if engine is None:
 	st.stop()
+
+def get_schema_info():
+    query = """
+    SELECT 
+        table_name, 
+        column_name, 
+        data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'olist'
+    ORDER BY table_name, ordinal_position
+    """
+
+    with engine.connect() as conn:
+        return pd.read_sql(query, conn)
+    
+with st.sidebar:
+    logout()
+    st.subheader("📂 Estrutura do Banco")
+    schema_df = get_schema_info()
+    tables = schema_df["table_name"].unique()
+    selected_table = st.selectbox("Selecione uma tabela", tables)
+    table_columns = schema_df[schema_df["table_name"] == selected_table]
+    st.write(table_columns[["column_name", "data_type"]])
 
 
 sql_query = st.text_area(

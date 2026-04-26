@@ -4,7 +4,7 @@ import streamlit as st
 import bcrypt
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from utils import logout
+from utils import logout, get_auth_table_config
 
 load_dotenv()
 
@@ -23,18 +23,18 @@ def _get_engine():
         return None
     return create_engine(url)
 
-
 engine = _get_engine()
 if engine is None:
     st.stop()
+    
+schema, table, user_field, password_field, role_field = get_auth_table_config()
 
 # ── Helpers ──────────────────────────────────────────────────────
-
 def cadastrar_usuario(email: str, password: str, role: str) -> tuple[bool, str]:
     try:
         with engine.begin() as conn:
             conn.execute(
-                text("INSERT INTO users (email, password, role) VALUES (:email, :password, :role)"),
+                text(f"INSERT INTO {schema}.{table} ({user_field}, {password_field}, {role_field}) VALUES (:email, :password, :role)"),
                 {"email": email, "password": bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"), "role": role},
             )
         return True, ""
@@ -49,7 +49,7 @@ def listar_usuarios() -> list[dict]:
     try:
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT email, role FROM users ORDER BY email")
+                text(f"SELECT {user_field}, {role_field} FROM {schema}.{table} ORDER BY {user_field}")
             ).mappings().fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
@@ -61,7 +61,7 @@ def excluir_usuario(email: str) -> tuple[bool, str]:
     try:
         with engine.begin() as conn:
             conn.execute(
-                text("DELETE FROM users WHERE email = :email"),
+                text(f"DELETE FROM {schema}.{table} WHERE {user_field} = :email"),
                 {"email": email},
             )
         return True, ""

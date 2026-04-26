@@ -112,15 +112,15 @@ CREATE TABLE IF NOT EXISTS order_items (
 );
 COPY order_items FROM 'olist_order_items_dataset.csv' HEADER CSV DELIMITER ',';
 
+CREATE SCHEMA system;
 -----------------------------------------------------------------------------------------------------------------------------------------
 -- Create table users
-DROP TABLE IF EXISTS users;
-CREATE TABLE IF NOT EXISTS users (
+DROP TABLE IF EXISTS system.users;
+CREATE TABLE IF NOT EXISTS system.users (
 	user_id SERIAL PRIMARY KEY,
 	email TEXT UNIQUE NOT NULL,
 	role TEXT UNIQUE NOT NULL,
 	password TEXT NOT NULL,
 	CONSTRAINT chk_role CHECK (role IN ('admin', 'user'));
 );
-
 -----------------------------------------------------------------------------------------------------------------------------------------

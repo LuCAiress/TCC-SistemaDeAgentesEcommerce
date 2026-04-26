@@ -4,7 +4,7 @@ import streamlit as st
 import bcrypt
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
-from utils import get_cookie_controller
+from utils import get_cookie_controller, get_auth_table_config
 
 load_dotenv()
 
@@ -38,30 +38,10 @@ def get_engine():
 engine = get_engine()
 if engine is None:
 	st.stop()
-
-
-def get_auth_table_config():
-	schema = os.getenv("AUTH_SCHEMA", "public")
-	table = os.getenv("AUTH_TABLE", "usuarios")
-	user_field = os.getenv("AUTH_USER_FIELD", "email")
-	password_field = os.getenv("AUTH_PASSWORD_FIELD", "senha")
-	role_field = os.getenv("AUTH_ROLE_FIELD", "cargo")
-
-	# Tabela pode ter schema: ex.: public.users ou auth.users
-	if not table.replace("_", "").replace(".", "").isalnum():
-		st.error("Configuração de autenticação inválida para AUTH_TABLE. Use opcionalmente schema.tabela, apenas com letras, números e _.")
-		st.stop()
-
-	for value in (user_field, password_field):
-		if not value.replace("_", "").replace(".", "").isalnum():
-			st.error("Configuração de autenticação inválida. Verifique AUTH_USER_FIELD e AUTH_PASSWORD_FIELD no .env.")
-			st.stop()
-
-	return schema, table, user_field, password_field, role_field
-
+ 
+schema, table, user_field, password_field, role_field = get_auth_table_config()
 
 def autenticar_usuario(username: str, password: str):
-	schema, table, user_field, password_field, role_field = get_auth_table_config()
 
 	query = text(
 		f"SELECT user_id, {user_field} AS username, {password_field} AS senha, {role_field} AS role "
