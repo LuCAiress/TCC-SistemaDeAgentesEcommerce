@@ -1,7 +1,10 @@
 import os
 import json
+from decimal import Decimal
+from datetime import datetime, date
 from dotenv import load_dotenv
 from langchain_community.utilities import SQLDatabase
+from sqlalchemy import text
 
 load_dotenv()
 
@@ -28,9 +31,9 @@ def executar_sql(db: SQLDatabase, query: str) -> dict:
     """Executa SQL read-only no banco PostgreSQL."""
     normalized = query.strip().lstrip("(").upper()
     if not (normalized.startswith("SELECT") or normalized.startswith("WITH")):
-        return {"erro": "Apenas consultas SELECT/WITH são permitidas."}
+        return {"error": "Apenas consultas SELECT/WITH são permitidas."}
     try:
         result = db.run(query)
         return {"sql": query, "resultado": result}
     except Exception as e:
-        return {"erro": str(e)}
+        return {"error": str(e)}
