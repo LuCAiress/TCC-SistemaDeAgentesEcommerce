@@ -122,7 +122,7 @@ def get_question_validation_system(business_context: str = "e-commerce") -> str:
         "Avalie se a pergunta do usuário é relevante para análise de negócios com os dados disponíveis:\n"
         "pedidos, clientes, produtos, vendedores, pagamentos, avaliações e localização.\n\n"
         "Responda APENAS com um JSON no formato:\n"
-        '{"valid": true/false, "reason": "motivo breve"}\n\n'
+        '{"valid": true/false}\n\n'
         "Considere VÁLIDA se:\n"
         "- Envolve métricas de negócio (vendas, receita, quantidade, média)\n"
         "- Envolve análise temporal (por mês, trimestre, ano)\n"
@@ -161,6 +161,7 @@ def build_sql_system_prompt() -> str:
 		- Apenas SELECT, nunca INSERT/UPDATE/DELETE/DROP
 		- Use o schema olist
 		- Se não for possível responder com SQL, retorne exatamente: SELECT NULL;
+    - ATENTE-SE com calma aos campos da tabela para realizar os JOINS corretos
 		- Use estas regras e relacionamentos: {schema_info}
 		
 """

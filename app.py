@@ -1,5 +1,29 @@
+import os
+
 import streamlit as st
+from dotenv import load_dotenv
+
 from utils import get_cookie_controller
+
+load_dotenv()
+
+
+def configure_mlflow() -> None:
+    try:
+        import mlflow
+
+        tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "file:./mlruns")
+        experiment_name = os.getenv("MLFLOW_EXPERIMENT_NAME", "TCC-SistemaDeAgentesEcommerce")
+
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(experiment_name)
+
+        if hasattr(mlflow, "langchain") and hasattr(mlflow.langchain, "autolog"):
+            mlflow.langchain.autolog()
+    except Exception:
+        pass
+
+configure_mlflow()
 
 st.set_page_config(
     page_title="TCC - Agentes de Análise de Negócios",
