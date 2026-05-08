@@ -11,6 +11,7 @@ from tools import get_db, get_schema, executar_sql, strip_codeblock
 from prompts import (
     get_question_validation_system,
     get_intent_classification_system,
+    get_history_check_system,
     build_sql_system_prompt,
     get_analysis_insight_system,
     get_analysis_summary_system,
@@ -23,9 +24,11 @@ load_dotenv()
 
 # Grafo atual:
 
-    # START validar_pergunta → classificar → gerar_sql → validar_sql → executar_sql → analisar → route → [visualizar] → END
-    #              |                                ↑             |
-    #              └→ END(pergunta fora do escopo)  └──   retry   ┘ (se SQL falhar)
+    # START validar_pergunta → classificar →  verificar_historico → gerar_sql → validar_sql → executar_sql → analisar → route → [visualizar] → END
+    #              |                                   |               ↑             |
+    #              └→ END(pergunta fora do escopo)     |               └──   retry   ┘ (se SQL falhar)
+    #                                                  |
+    #                                                  └→ END (se histórico já responde)
 
 MAX_SQL_RETRIES = 2
 
@@ -33,6 +36,7 @@ MAX_SQL_RETRIES = 2
 
 class AgentState(TypedDict):
     user_message: str
+    chat_history: str
     intent: str
     sql_query: str
     sql_result: str
@@ -84,6 +88,32 @@ def build_graph(db=None):
         if intent not in ("consulta", "visualizacao", "insight"):
             intent = "consulta"
         return {"intent": intent}
+    
+    # - Nó 1.5: Verificar se o histórico já responde a pergunta
+
+    def verificar_historico(state: AgentState) -> dict:
+        history = state.get("chat_history", "").strip()
+        intent = state.get("intent", "consulta")
+
+        # Sem histórico ou intent de visualização: sempre vai para SQL
+        if not history or intent == "visualizacao":
+            return {}
+
+        response = llm.invoke([
+            SystemMessage(content=get_history_check_system()),
+            HumanMessage(content=
+                f"Intent classificado: {intent}\n\n"
+                f"Histórico:\n{history}\n\n"
+                f"Pergunta atual: {state['user_message']}"
+            ),
+        ])
+        try:
+            result = json.loads(strip_codeblock(response.content))
+            if result.get("answered"):
+                return {"final_response": result.get("response", "")}
+        except json.JSONDecodeError:
+            pass 
+        return {}
 
     # - Nó 2: Gerar query SQL 
 
@@ -122,6 +152,7 @@ def build_graph(db=None):
                             f"Query anterior: {state['sql_query']} \n\n"
                             f"Erro retornado: {state['sql_error']} \n\n"
                             f"Pergunta original do usuário: {state['user_message']}"
+                            f"Histórico da conversa: {state['chat_history', '']}"
                         ),
                     ])
         sql = strip_codeblock(response.content)
@@ -152,19 +183,21 @@ def build_graph(db=None):
             SystemMessage(content=system),
             HumanMessage(content=build_analysis_human_prompt(
                 user_message=state["user_message"],
+                chat_history=state["chat_history"],
                 sql_query=state["sql_query"],
                 sql_result=state["sql_result"],
             )),
         ])
         return {"analysis": response.content, "final_response": response.content}
 
-    # ── Nó 7: Gerar especificação de gráfico Plotly ──────────────────────
+    # ─ Nó 7: Gerar especificação de gráfico Plotly ──────────────────────
 
     def visualizar(state: AgentState) -> dict:
         response = llm.invoke([
             SystemMessage(content=get_visualization_system()),
             HumanMessage(content=build_visualization_human_prompt(
                 user_message=state["user_message"],
+                chat_history=state["chat_history"],
                 sql_result=state["sql_result"],
             )),
         ])
@@ -175,12 +208,21 @@ def build_graph(db=None):
             "final_response": analysis,
         }
 
-    # ── Roteamento após executar validação de pergunta ───────────────────────
+    # ─ Roteamento após executar validação de pergunta ───────────────────────
+
     def route_after_validation(state: AgentState) -> str:
         if state.get("final_response"):
             return "fim"
         return "classificar"
-    # ── Roteamento: após executar SQL ────────────────────────────────────────
+    
+    # ─ Roteamento após verificação do histórico ────────────────────────────────────────
+
+    def route_after_history(state: AgentState) -> str:
+        if state.get("final_response"):
+            return "fim"
+        return "gerar_sql"
+
+    # ─ Roteamento após executar SQL ────────────────────────────────────────
 
     def route_after_sql(state: AgentState) -> str:
         if state.get("sql_error"):
@@ -189,19 +231,20 @@ def build_graph(db=None):
             return "erro_final"
         return "analisar"
     
-    # ── Roteamento condicional após análise ──────────────────────────────
+    # ─ Roteamento condicional após análise ─────────────────────────────────
 
     def route_after_analysis(state: AgentState) -> str:
         if state.get("intent") == "visualizacao":
             return "visualizar"
         return "fim"
 
-    # ── Montar o StateGraph ──────────────────────────────────────────────
+    # ─ Montar o StateGraph ─────────────────────────────────────────────────
 
     graph = StateGraph(AgentState)
 
     graph.add_node("validar_pergunta", validar_pergunta)
     graph.add_node("classificar", classificar)
+    graph.add_node("verificar_historico", verificar_historico)
     graph.add_node("gerar_sql", gerar_sql)
     graph.add_node("executar_sql", executar)
     graph.add_node("corrigir_sql", corrigir_sql)
@@ -214,7 +257,11 @@ def build_graph(db=None):
     "fim": END,
     "classificar": "classificar",
     })
-    graph.add_edge("classificar", "gerar_sql")
+    graph.add_edge("classificar", "verificar_historico")
+    graph.add_conditional_edges("verificar_historico", route_after_history, {
+        "fim": END,
+        "gerar_sql": "gerar_sql",
+    })
     graph.add_edge("gerar_sql", "executar_sql")
     graph.add_conditional_edges("executar_sql", route_after_sql, {
         "corrigir_sql": "corrigir_sql",

@@ -151,20 +151,38 @@ def get_intent_classification_system() -> str:
         "Responda APENAS com a palavra da categoria, sem explicação, sem pontuação."
 	)
 
+def get_history_check_system(business_context: str = "e-commerce") -> str:
+    return (
+        f"Você é um assistente de análise de dados de {business_context} com acesso ao histórico de uma conversa.\n\n"
+        "Avalie se a pergunta atual pode ser respondida COMPLETAMENTE com base apenas no histórico, "
+        "sem precisar consultar o banco de dados.\n\n"
+        "Responda APENAS com JSON no formato:\n"
+        '{"answered": true, "response": "sua resposta completa aqui"} '
+        "ou "
+        '{"answered": false}\n\n'
+        "Considere respondível pelo histórico se:\n"
+        "- É um acompanhamento ou reformulação sobre dados já apresentados\n"
+        "- Pede resumo, esclarecimento ou comparação do que já foi exibido\n"
+        "- A resposta pode ser dada com base nas informações já na conversa\n\n"
+        "Considere NÃO respondível se:\n"
+        "- Requer novos dados do banco não presentes no histórico\n"
+        "- O intent é 'visualizacao' (gráfico sempre exige dados frescos)\n"
+        "- O histórico está vazio ou é irrelevante para a pergunta"
+    )
+
 
 def build_sql_system_prompt() -> str:
     return f"""
-		Você é um especialista em SQL PostgreSQL.
+      Você é um especialista em SQL PostgreSQL.
 
-		REGRAS:
-		- Gere APENAS a query SQL, sem explicação, sem comentários
-		- Apenas SELECT, nunca INSERT/UPDATE/DELETE/DROP
-		- Use o schema olist
-		- Se não for possível responder com SQL, retorne exatamente: SELECT NULL;
-    - ATENTE-SE com calma aos campos da tabela para realizar os JOINS corretos
-		- Use estas regras e relacionamentos: {schema_info}
-		
-"""
+      REGRAS:
+      - Gere APENAS a query SQL, sem explicação, sem comentários
+      - Apenas SELECT, nunca INSERT/UPDATE/DELETE/DROP
+      - Use o schema olist
+      - Se não for possível responder com SQL, retorne exatamente: SELECT NULL;
+      - ATENTE-SE com calma aos campos da tabela para realizar os JOINS corretos
+      - Use estas regras e relacionamentos: {schema_info}
+		"""
 
 def get_analysis_insight_system(business_context: str = "e-commerce") -> str:
 	return (
@@ -188,9 +206,10 @@ def get_analysis_summary_system() -> str:
 	)
 
 
-def build_analysis_human_prompt(user_message: str, sql_query: str, sql_result: str) -> str:
+def build_analysis_human_prompt(user_message: str, chat_history: str, sql_query: str, sql_result: str) -> str:
 	return (
 		f"Pergunta do usuário: {user_message}\n\n"
+		f"Histórico da conversa: {chat_history}\n\n"
 		f"SQL executada:\n```sql\n{sql_query}\n```\n\n"
 		f"Resultado:\n{sql_result}"
 	)
@@ -210,9 +229,10 @@ def get_visualization_system() -> str:
 	)
 
 
-def build_visualization_human_prompt(user_message: str, sql_result: str) -> str:
+def build_visualization_human_prompt(user_message: str, chat_history: str, sql_result: str) -> str:
 	return (
 		f"Pergunta: {user_message}\n\n"
+		f"Histórico da conversa: {chat_history}\n\n"
 		f"Dados:\n{sql_result}"
 	)
 

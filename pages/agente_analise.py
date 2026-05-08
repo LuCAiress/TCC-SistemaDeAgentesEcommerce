@@ -103,18 +103,16 @@ if user_query:
 
         # Monta contexto com histórico (sem a pergunta atual que já está em pg_messages)
         history = build_chat_history(st.session_state.pg_messages[:-1])
-        full_prompt = (
-            f"Histórico da conversa:\n{history}\n\nPergunta atual:\n{user_query}"
-            if history
-            else user_query  # sem histórico, manda só a pergunta — menos ruído
-        )
 
         try:
             result = agent.invoke({
-                "user_message": full_prompt,
+                "user_message": user_query,
+                "chat_history": history,
                 "intent": "",
                 "sql_query": "",
                 "sql_result": "",
+                "sql_error": "",
+                "retry_count": 0,
                 "analysis": "",
                 "chart_spec": "",
                 "final_response": "",
