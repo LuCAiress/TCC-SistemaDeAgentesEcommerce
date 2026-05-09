@@ -65,7 +65,9 @@ def build_graph(db=None):
         
         response = llm.invoke([
             SystemMessage(content=get_question_validation_system()),
-            HumanMessage(content=state["user_message"]),
+            HumanMessage(content= 
+                        f"Histórico da conversa:{state["chat_history"]}" 
+                        f"Pregunta atual: {state["user_message"]}"),
         ])
 
         try:
