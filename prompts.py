@@ -120,7 +120,8 @@ def get_question_validation_system(business_context: str = "e-commerce") -> str:
     return (
         f"Você é um validador de perguntas para um sistema de análise de dados de {business_context}.\n\n"
         "Avalie se a pergunta do usuário é relevante para análise de negócios com os dados disponíveis:\n"
-        "pedidos, clientes, produtos, vendedores, pagamentos, avaliações e localização.\n\n"
+        "pedidos, clientes, produtos, vendedores, pagamentos, avaliações e localização.\n"
+		    "Lembre-se de levar o histórico da conversa em consideração na hora de avaliar a validade da pergunta\n"
         "Responda APENAS com um JSON no formato:\n"
         '{"valid": true/false}\n\n'
         "Considere VÁLIDA se:\n"

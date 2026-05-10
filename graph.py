@@ -1,11 +1,13 @@
 import os
 import json
-from typing import TypedDict
+import operator
+from typing import TypedDict, Annotated
 
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import InMemorySaver
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 
 from tools import get_db, get_schema, executar_sql, strip_codeblock
 from prompts import (
@@ -22,6 +24,20 @@ from prompts import (
 
 load_dotenv()
 
+checkpoint_saver = InMemorySaver()
+
+# Converte mensagens do histórico em string para o LLM analisar contexto da conversa
+def build_history_from_messages(messages: list, limit: int = 6) -> str:
+    lines = []
+    for m in messages[-limit:]:
+        if isinstance(m, HumanMessage):
+            lines.append(f"Usuário: {m.content}")
+        elif isinstance(m, AIMessage):
+            lines.append(f"Assistente: {m.content}")
+    return "\n".join(lines)
+
+MAX_SQL_RETRIES = 2
+
 # Grafo atual:
 
     # START validar_pergunta → classificar →  verificar_historico → gerar_sql → validar_sql → executar_sql → analisar → route → [visualizar] → END
@@ -30,13 +46,12 @@ load_dotenv()
     #                                                  |
     #                                                  └→ END (se histórico já responde)
 
-MAX_SQL_RETRIES = 2
 
 # - Estado compartilhado entre os nós do grafo
 
 class AgentState(TypedDict):
     user_message: str
-    chat_history: str
+    messages: Annotated[list[BaseMessage], operator.add]
     intent: str
     sql_query: str
     sql_result: str
@@ -46,6 +61,12 @@ class AgentState(TypedDict):
     chart_spec: str
     final_response: str
 
+# Decorador para injetar o histórico formatado em nós que precisam dessa informação para análise de contexto
+def with_history(fn):
+    def wrapper(state: AgentState) -> dict:
+        history = build_history_from_messages(state.get("messages", []))
+        return fn(state, history)
+    return wrapper
 
 # - Construção do grafo 
 
@@ -58,22 +79,26 @@ def build_graph(db=None):
     llm = ChatOllama(model=model, temperature=0.0, reasoning=False)
 
     # - Nó 0: Validar pergunta do usuário
-
-    def validar_pergunta(state: AgentState) -> dict:
+    @with_history
+    def validar_pergunta(state: AgentState, history: str) -> dict:
         if not state["user_message"].strip():
             return {"final_response": "Por favor, faça uma pergunta válida."}
-        
+
         response = llm.invoke([
             SystemMessage(content=get_question_validation_system()),
             HumanMessage(content= 
-                        f"Histórico da conversa:{state["chat_history"]}" 
+                        f"Histórico da conversa:{history}\n\n" 
                         f"Pregunta atual: {state["user_message"]}"),
         ])
 
         try:
             result = json.loads(strip_codeblock(response.content))
             if not result.get("valid", True):
-                return {"final_response": f"Pergunta fora do escopo: {result.get('reason', 'não relacionada aos dados disponíveis. Por favor, faça perguntas relacionadas apenas aos dados do negócio.')}"}
+                msg = f"Não foi possível processar sua pergunta: {result.get('reason', ', talvez não esteja relacionada aos dados disponíveis. Por favor, faça perguntas relacionadas apenas aos dados do negócio.')}"
+                return {
+                    "final_response": msg,
+                    "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=msg)]
+                }
         except json.JSONDecodeError:
             pass  # se o LLM não retornar JSON válido, deixa passar
 
@@ -93,8 +118,8 @@ def build_graph(db=None):
     
     # - Nó 1.5: Verificar se o histórico já responde a pergunta
 
-    def verificar_historico(state: AgentState) -> dict:
-        history = state.get("chat_history", "").strip()
+    @with_history
+    def verificar_historico(state: AgentState, history: str) -> dict:
         intent = state.get("intent", "consulta")
 
         # Sem histórico ou intent de visualização: sempre vai para SQL
@@ -104,15 +129,18 @@ def build_graph(db=None):
         response = llm.invoke([
             SystemMessage(content=get_history_check_system()),
             HumanMessage(content=
-                f"Intent classificado: {intent}\n\n"
                 f"Histórico:\n{history}\n\n"
                 f"Pergunta atual: {state['user_message']}"
             ),
         ])
+
         try:
             result = json.loads(strip_codeblock(response.content))
             if result.get("answered"):
-                return {"final_response": result.get("response", "")}
+                resposta = result.get("response", "")
+                return {
+                    "final_response": resposta,
+                    "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=resposta)]}
         except json.JSONDecodeError:
             pass 
         return {}
@@ -145,8 +173,9 @@ def build_graph(db=None):
             }
     
     # - Nó 4: Corrigir SQl com base no erro
-
-    def corrigir_sql(state: AgentState) -> dict:
+    
+    @with_history
+    def corrigir_sql(state: AgentState, history: str) -> dict:
         response = llm.invoke([
             SystemMessage(content=build_sql_system_prompt()),
             HumanMessage(content=
@@ -154,7 +183,7 @@ def build_graph(db=None):
                             f"Query anterior: {state['sql_query']} \n\n"
                             f"Erro retornado: {state['sql_error']} \n\n"
                             f"Pergunta original do usuário: {state['user_message']}"
-                            f"Histórico da conversa: {state['chat_history', '']}"
+                            f"Histórico da conversa: {history}"
                         ),
                     ])
         sql = strip_codeblock(response.content)
@@ -163,19 +192,25 @@ def build_graph(db=None):
     # - Nó 5: Tratar erro final após tentativas de correção
 
     def tratar_erro_final(state: AgentState) -> dict:
-        return {
-            "final_response": (
+        resposta = (
                 "Não foi possível executar a consulta no banco de dados. "
                 f"Erro: {state.get('sql_error', 'Erro desconhecido')}. "
                 "Por favor, reformule sua pergunta ou tente novamente mais tarde."
             )
+        return {
+            "final_response": resposta,
+            "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=resposta)]
         }
 
     # - Nó 6: Analisar resultados 
 
-    def analisar(state: AgentState) -> dict:
+    @with_history
+    def analisar(state: AgentState, history: str) -> dict:
         intent = state.get("intent", "consulta")
 
+        if intent == "visualizacao":
+            return {"analysis": None, "final_response": None}  # pula de análise para visualização
+        
         if intent == "insight":
             system = get_analysis_insight_system()
         else:
@@ -185,29 +220,41 @@ def build_graph(db=None):
             SystemMessage(content=system),
             HumanMessage(content=build_analysis_human_prompt(
                 user_message=state["user_message"],
-                chat_history=state["chat_history"],
+                chat_history=history,
                 sql_query=state["sql_query"],
                 sql_result=state["sql_result"],
             )),
         ])
-        return {"analysis": response.content, "final_response": response.content}
+        return {
+            "analysis": response.content,
+            "final_response": response.content,
+            "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=response.content)]
+        }
 
     # ─ Nó 7: Gerar especificação de gráfico Plotly ──────────────────────
 
-    def visualizar(state: AgentState) -> dict:
+    @with_history
+    def visualizar(state: AgentState, history: str) -> dict:
         response = llm.invoke([
             SystemMessage(content=get_visualization_system()),
             HumanMessage(content=build_visualization_human_prompt(
                 user_message=state["user_message"],
-                chat_history=state["chat_history"],
+                chat_history=history,
                 sql_result=state["sql_result"],
             )),
         ])
         chart = strip_codeblock(response.content)
-        analysis = state.get("analysis", "")
+        
+        # Mensagem para contexto no histórico: descrição do gráfico gerado
+        dados = state.get("sql_result", "")
+        history_msg = (
+            f"[Gráfico gerado para: '{state['user_message']}']\n"
+            f"Dados: {dados}"
+        )
         return {
             "chart_spec": chart,
-            "final_response": analysis,
+            "final_response": "",
+            "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=history_msg)]
         }
 
     # ─ Roteamento após executar validação de pergunta ───────────────────────
@@ -278,4 +325,4 @@ def build_graph(db=None):
     })
     graph.add_edge("visualizar", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpoint_saver)
