@@ -1,18 +1,17 @@
 import os
 import json
+import ast
+import re
 import operator
 from typing import TypedDict, Annotated
-
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
-
 from tools import get_db, get_schema, executar_sql, strip_codeblock
 from prompts import (
-    get_question_validation_system,
-    get_intent_classification_system,
+    get_validation_and_classification_system,
     get_history_check_system,
     build_sql_system_prompt,
     get_analysis_insight_system,
@@ -36,19 +35,53 @@ def build_history_from_messages(messages: list, limit: int = 6) -> str:
             lines.append(f"Assistente: {m.content}")
     return "\n".join(lines)
 
+
+def compact_sql_result(
+    sql_result: str,
+    max_rows: int = 10,
+    max_text_length: int = 1200,
+    include_sql: bool = False,
+) -> str:
+    """Reduz o payload enviado ao LLM para análise/visualização."""
+    try:
+        payload = json.loads(sql_result)
+    except Exception:
+        payload = None
+
+    if isinstance(payload, dict):
+        compact = {}
+        if include_sql:
+            compact["sql"] = payload.get("sql")
+        resultado = payload.get("resultado")
+
+        if isinstance(resultado, str):
+            normalized = re.sub(r"Decimal\('([^']+)'\)", r"\1", resultado)
+            try:
+                parsed = ast.literal_eval(normalized)
+            except Exception:
+                parsed = resultado
+        else:
+            parsed = resultado
+
+        if isinstance(parsed, list):
+            compact["total_linhas"] = len(parsed)
+            compact["linhas_limitadas"] = max_rows
+            compact["resultado"] = parsed[:max_rows]
+        else:
+            compact["resultado"] = parsed
+
+        text = json.dumps(compact, ensure_ascii=False, default=str)
+        if len(text) > max_text_length:
+            return text[:max_text_length] + "..."
+        return text
+
+    if len(sql_result) > max_text_length:
+        return sql_result[:max_text_length] + "..."
+    return sql_result
+
 MAX_SQL_RETRIES = 2
 
-# Grafo atual:
-
-    # START validar_pergunta → classificar →  verificar_historico → gerar_sql → validar_sql → executar_sql → analisar → route → [visualizar] → END
-    #              |                                   |               ↑             |
-    #              └→ END(pergunta fora do escopo)     |               └──   retry   ┘ (se SQL falhar)
-    #                                                  |
-    #                                                  └→ END (se histórico já responde)
-
-
-# - Estado compartilhado entre os nós do grafo
-
+# Estado compartilhado entre os nós do grafo
 class AgentState(TypedDict):
     user_message: str
     messages: Annotated[list[BaseMessage], operator.add]
@@ -68,8 +101,10 @@ def with_history(fn):
         return fn(state, history)
     return wrapper
 
-# - Construção do grafo 
+# Simple in-memory cache to avoid repeated LLM calls for same (message+history)
+validation_cache: dict = {}
 
+# Construção do grafo 
 def build_graph(db=None):
     if db is None:
         db = get_db()
@@ -77,76 +112,72 @@ def build_graph(db=None):
     # schema_info = get_schema(db)
     model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
     llm = ChatOllama(model=model, temperature=0.0, reasoning=False)
+    llm_fast = ChatOllama(model=model, temperature=0.3, reasoning=False)  # LLM mais rápido para análise
+    
+    # ------------------------------------------------------------------
+    # Nodes - (Estados)
+    # ------------------------------------------------------------------
 
-    # - Nó 0: Validar pergunta do usuário
+    # Nó unificado: validar + classificar + verificar histórico (uma chamada LLM ou heurísticas/cache)
     @with_history
-    def validar_pergunta(state: AgentState, history: str) -> dict:
+    def validar_classificar_e_verificar(state: AgentState, history: str) -> dict:
         if not state["user_message"].strip():
             return {"final_response": "Por favor, faça uma pergunta válida."}
 
+        text_lower = state["user_message"].lower()
+        # Heurística local para visualização (evita LLM quando claro)
+        viz_keywords = ("gráfico", "grafico", "plot", "visualização", "visualizacao", "chart")
+        if any(k in text_lower for k in viz_keywords):
+            return {"intent": "visualizacao"}
+
+        # Cache key = (mensagem, histórico)
+        cache_key = (state["user_message"], history)
+        cached = validation_cache.get(cache_key)
+        if cached:
+            return cached.copy()
+
+        # Chamada única ao LLM pedindo validação, intent e se histórico já responde
+        combined_system = (
+            get_validation_and_classification_system()
+            + "\n\n"
+            + get_history_check_system()
+            + "\n\nRetorne APENAS um JSON com as chaves: "
+            + "valid (bool), intent (consulta|visualizacao|insight), answered (bool), response (string)."
+        )
+
         response = llm.invoke([
-            SystemMessage(content=get_question_validation_system()),
-            HumanMessage(content= 
-                        f"Histórico da conversa:{history}\n\n" 
-                        f"Pregunta atual: {state["user_message"]}"),
+            SystemMessage(content=combined_system),
+            HumanMessage(content=f"Histórico:\n{history}\n\nPergunta atual: {state['user_message']}")
         ])
 
         try:
             result = json.loads(strip_codeblock(response.content))
-            if not result.get("valid", True):
-                msg = f"Não foi possível processar sua pergunta: {result.get('reason', ', talvez não esteja relacionada aos dados disponíveis. Por favor, faça perguntas relacionadas apenas aos dados do negócio.')}"
-                return {
-                    "final_response": msg,
-                    "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=msg)]
-                }
-        except json.JSONDecodeError:
-            pass  # se o LLM não retornar JSON válido, deixa passar
+        except Exception:
+            result = {"valid": True, "intent": "consulta", "answered": False, "response": ""}
 
-        return {}
+        if not result.get("valid", True):
+            msg = (
+                "Não foi possível processar sua pergunta: talvez não esteja relacionada aos dados disponíveis. "
+                "Por favor, faça perguntas relacionadas apenas aos dados do negócio."
+            )
+            out = {"final_response": msg, "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=msg)]}
+            validation_cache[cache_key] = out
+            return out
 
-    # - Nó 1: Classificar intenção do usuário 
+        if result.get("answered"):
+            resposta = result.get("response", "")
+            out = {"final_response": resposta, "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=resposta)]}
+            validation_cache[cache_key] = out
+            return out
 
-    def classificar(state: AgentState) -> dict:
-        response = llm.invoke([
-            SystemMessage(content=get_intent_classification_system()),
-            HumanMessage(content=state["user_message"]),
-        ])
-        intent = response.content.strip().lower()
+        intent = result.get("intent", "consulta")
         if intent not in ("consulta", "visualizacao", "insight"):
             intent = "consulta"
-        return {"intent": intent}
-    
-    # - Nó 1.5: Verificar se o histórico já responde a pergunta
+        out = {"intent": intent}
+        validation_cache[cache_key] = out
+        return out
 
-    @with_history
-    def verificar_historico(state: AgentState, history: str) -> dict:
-        intent = state.get("intent", "consulta")
-
-        # Sem histórico ou intent de visualização: sempre vai para SQL
-        if not history or intent == "visualizacao":
-            return {}
-
-        response = llm.invoke([
-            SystemMessage(content=get_history_check_system()),
-            HumanMessage(content=
-                f"Histórico:\n{history}\n\n"
-                f"Pergunta atual: {state['user_message']}"
-            ),
-        ])
-
-        try:
-            result = json.loads(strip_codeblock(response.content))
-            if result.get("answered"):
-                resposta = result.get("response", "")
-                return {
-                    "final_response": resposta,
-                    "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=resposta)]}
-        except json.JSONDecodeError:
-            pass 
-        return {}
-
-    # - Nó 2: Gerar query SQL 
-
+    # Nó 2: Gerar SQL a partir da pergunta do usuário
     def gerar_sql(state: AgentState) -> dict:
         response = llm.invoke([
             SystemMessage(content=build_sql_system_prompt()),
@@ -155,8 +186,7 @@ def build_graph(db=None):
         sql = strip_codeblock(response.content)
         return {"sql_query": sql, "retry_count": 0, "sql_error": ""}
 
-    # - Nó 3: Executar SQL no banco 
-
+    # Nó 3: Executar SQL no banco PostgreSQL
     def executar(state: AgentState) -> dict:
         result = executar_sql(db, state["sql_query"])
 
@@ -170,12 +200,10 @@ def build_graph(db=None):
         return {
             "sql_result": json.dumps(result, ensure_ascii=False, default=str),
             "sql_error": ""
-            }
+        }
     
     # - Nó 4: Corrigir SQl com base no erro
-    
-    @with_history
-    def corrigir_sql(state: AgentState, history: str) -> dict:
+    def corrigir_sql(state: AgentState) -> dict:
         response = llm.invoke([
             SystemMessage(content=build_sql_system_prompt()),
             HumanMessage(content=
@@ -183,14 +211,12 @@ def build_graph(db=None):
                             f"Query anterior: {state['sql_query']} \n\n"
                             f"Erro retornado: {state['sql_error']} \n\n"
                             f"Pergunta original do usuário: {state['user_message']}"
-                            f"Histórico da conversa: {history}"
                         ),
                     ])
         sql = strip_codeblock(response.content)
         return {"sql_query": sql}
 
     # - Nó 5: Tratar erro final após tentativas de correção
-
     def tratar_erro_final(state: AgentState) -> dict:
         resposta = (
                 "Não foi possível executar a consulta no banco de dados. "
@@ -203,9 +229,7 @@ def build_graph(db=None):
         }
 
     # - Nó 6: Analisar resultados 
-
-    @with_history
-    def analisar(state: AgentState, history: str) -> dict:
+    def analisar(state: AgentState) -> dict:
         intent = state.get("intent", "consulta")
 
         if intent == "visualizacao":
@@ -216,13 +240,19 @@ def build_graph(db=None):
         else:
             system = get_analysis_summary_system()
 
-        response = llm.invoke([
+        # Compactar resultado antes de enviar
+        compact_result = compact_sql_result(
+            state["sql_result"],
+            max_rows=10,
+            max_text_length=900,
+            include_sql=False,
+        )
+
+        response = llm_fast.invoke([
             SystemMessage(content=system),
             HumanMessage(content=build_analysis_human_prompt(
                 user_message=state["user_message"],
-                chat_history=history,
-                sql_query=state["sql_query"],
-                sql_result=state["sql_result"],
+                sql_result=compact_result,
             )),
         ])
         return {
@@ -232,15 +262,20 @@ def build_graph(db=None):
         }
 
     # ─ Nó 7: Gerar especificação de gráfico Plotly ──────────────────────
-
-    @with_history
-    def visualizar(state: AgentState, history: str) -> dict:
-        response = llm.invoke([
+    def visualizar(state: AgentState) -> dict:
+        # Compactar resultado antes de enviar
+        compact_result = compact_sql_result(
+            state["sql_result"],
+            max_rows=14,
+            max_text_length=1200,
+            include_sql=False,
+        )
+        
+        response = llm_fast.invoke([
             SystemMessage(content=get_visualization_system()),
             HumanMessage(content=build_visualization_human_prompt(
                 user_message=state["user_message"],
-                chat_history=history,
-                sql_result=state["sql_result"],
+                sql_result=compact_result,
             )),
         ])
         chart = strip_codeblock(response.content)
@@ -256,23 +291,18 @@ def build_graph(db=None):
             "final_response": "",
             "messages": [HumanMessage(content=state["user_message"]), AIMessage(content=history_msg)]
         }
+        
+    # ------------------------------------------------------------------
+    # EDGES - (Roteadores)
+    # ------------------------------------------------------------------
 
-    # ─ Roteamento após executar validação de pergunta ───────────────────────
-
+    # Roteamento após nó unificado de validação/classificação/cheque de histórico
     def route_after_validation(state: AgentState) -> str:
-        if state.get("final_response"):
-            return "fim"
-        return "classificar"
-    
-    # ─ Roteamento após verificação do histórico ────────────────────────────────────────
-
-    def route_after_history(state: AgentState) -> str:
         if state.get("final_response"):
             return "fim"
         return "gerar_sql"
 
     # ─ Roteamento após executar SQL ────────────────────────────────────────
-
     def route_after_sql(state: AgentState) -> str:
         if state.get("sql_error"):
             if state.get("retry_count", 0) < MAX_SQL_RETRIES:
@@ -281,19 +311,18 @@ def build_graph(db=None):
         return "analisar"
     
     # ─ Roteamento condicional após análise ─────────────────────────────────
-
     def route_after_analysis(state: AgentState) -> str:
         if state.get("intent") == "visualizacao":
             return "visualizar"
         return "fim"
 
-    # ─ Montar o StateGraph ─────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # GRAPH - Montagem da lógica do agente com o grafo de estados
+    # ------------------------------------------------------------------
 
     graph = StateGraph(AgentState)
 
-    graph.add_node("validar_pergunta", validar_pergunta)
-    graph.add_node("classificar", classificar)
-    graph.add_node("verificar_historico", verificar_historico)
+    graph.add_node("validar_classificar_e_verificar", validar_classificar_e_verificar)
     graph.add_node("gerar_sql", gerar_sql)
     graph.add_node("executar_sql", executar)
     graph.add_node("corrigir_sql", corrigir_sql)
@@ -301,13 +330,8 @@ def build_graph(db=None):
     graph.add_node("analisar", analisar)
     graph.add_node("visualizar", visualizar)
 
-    graph.add_edge(START, "validar_pergunta")
-    graph.add_conditional_edges("validar_pergunta", route_after_validation, {
-    "fim": END,
-    "classificar": "classificar",
-    })
-    graph.add_edge("classificar", "verificar_historico")
-    graph.add_conditional_edges("verificar_historico", route_after_history, {
+    graph.add_edge(START, "validar_classificar_e_verificar")
+    graph.add_conditional_edges("validar_classificar_e_verificar", route_after_validation, {
         "fim": END,
         "gerar_sql": "gerar_sql",
     })
@@ -317,7 +341,7 @@ def build_graph(db=None):
         "erro_final": "erro_final",
         "analisar": "analisar",
     })
-    graph.add_edge("corrigir_sql", "executar_sql")  # loop de retry
+    graph.add_edge("corrigir_sql", "executar_sql")
     graph.add_edge("erro_final", END)
     graph.add_conditional_edges("analisar", route_after_analysis, {
         "visualizar": "visualizar",
