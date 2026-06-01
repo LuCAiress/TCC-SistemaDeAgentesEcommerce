@@ -216,17 +216,11 @@ def build_analysis_human_prompt(user_message: str, chat_history: str, sql_query:
 
 def get_visualization_system() -> str:
 	return (
-		"Gere um JSON válido de especificação Plotly para visualizar os dados.\n"
-        'O JSON deve ter exatamente esta estrutura: {"data": [...], "layout": {...}}\n'
-        "REGRAS:\n"
-        "- Use tipos adequados: bar, line, pie, scatter\n"
-		    "- Para geração do gráfico use fundo transparente\n "
-        "- Adicione title no layout descrevendo o gráfico\n"
-        "- Formate valores monetários em R$\n"
-        "- Datas no formato DD/MM/YYYY\n"
-        "- Responda APENAS com o JSON. Nenhum texto antes ou depois.\n"
-        "- Não use markdown, não use ```json"
-        "- Tenha cuidado para gerar JSON válido, pois será renderizado diretamente como gráfico"
+    "Gere JSON Plotly: {\"data\": [...], \"layout\": {...}}"
+    "- Escolha apenas 1 tipo entre: bar, line, pie, scatter"
+    "- Use fundo transparente e cores vivas"
+    "- No maximo 1 trace para pie e 2 traces para outros tipos"
+    "- APENAS JSON, sem markdown nem explicacoes"
 	)
 
 
