@@ -191,8 +191,8 @@ def get_analysis_insight_system(business_context: str = "e-commerce") -> str:
         "2. **Tendências ou padrões** identificados\n"
         "3. **Possíveis causas** para os resultados\n"
         "4. **Recomendações** de ação para o negócio\n\n"
-        "Seja específico, use os números dos dados. Não invente informações não presentes nos dados."
-		    "Formate valores monetários em R/$"
+        "Seja específico, use os números dos dados. Não invente informações não presentes nos dados.\n"
+		    "Formate sua resposta em markdown."
 	)
 
 
@@ -201,7 +201,7 @@ def get_analysis_summary_system() -> str:
 		"Resuma os resultados da consulta SQL de forma clara e objetiva. "
 		"Formate dados tabulares como tabela Markdown quando apropriado. "
 		"Seja conciso e direto. Não invente informações não presentes nos dados.\n"
-		"Formate valores monetários em R/$"
+		"Formate sua resposta em markdown."
 	)
 
 
@@ -220,6 +220,7 @@ def get_visualization_system() -> str:
         'O JSON deve ter exatamente esta estrutura: {"data": [...], "layout": {...}}\n'
         "REGRAS:\n"
         "- Use tipos adequados: bar, line, pie, scatter\n"
+		    "- Para geração do gráfico use fundo transparente\n "
         "- Adicione title no layout descrevendo o gráfico\n"
         "- Formate valores monetários em R$\n"
         "- Datas no formato DD/MM/YYYY\n"

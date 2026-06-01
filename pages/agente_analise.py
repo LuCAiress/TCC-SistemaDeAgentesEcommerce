@@ -68,14 +68,6 @@ def render_message(msg: dict):
             with st.expander("🔍 SQL executada"):
                 st.code(msg["sql_query"], language="sql")
 
-        if msg.get("sql_result"):
-            with st.expander("📄 Resultado bruto (JSON)"):
-                try:
-                    parsed = json.loads(msg["sql_result"])
-                    st.json(parsed)
-                except Exception:
-                    st.text(msg["sql_result"])
-
 # ── Renderiza histórico ───────────────────────────────────────────────────
 for msg in st.session_state.pg_messages:
     render_message(msg)
@@ -113,7 +105,7 @@ if user_query:
             st.error(f"Erro ao processar sua pergunta: {e}")
             st.stop()
 
-        final_response = result.get("final_response", "")
+        final_response = (result.get("final_response", "")).replace("R$", "R\\$")
         chart_spec = result.get("chart_spec", "")
         sql_query = result.get("sql_query", "")
 
