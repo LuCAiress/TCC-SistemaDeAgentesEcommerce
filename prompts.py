@@ -226,6 +226,7 @@ def get_visualization_system() -> str:
         "- Datas no formato DD/MM/YYYY\n"
         "- Responda APENAS com o JSON. Nenhum texto antes ou depois.\n"
         "- Não use markdown, não use ```json"
+        "- Tenha cuidado para gerar JSON válido, pois será renderizado diretamente como gráfico"
 	)
 
 

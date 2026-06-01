@@ -19,7 +19,7 @@ st.subheader("🏗️ Arquitetura do Sistema")
 
 st.markdown(
     """
-    O sistema utiliza um **StateGraph** (LangGraph) com 5 nós especializados:
+    O sistema utiliza um **StateGraph** (LangGraph) com 9 nós especializados:
 
     """
 )
@@ -27,7 +27,7 @@ st.markdown(
 col_left, col_center, col_right = st.columns([1, 2, 1])
 with col_center:
     st.image(
-        "images\Intenção Classificação to-2026-03-22-194622.png",
+        "images\grafo.png",
         caption="Arquitetura do grafo de intenção e geração de insights",
         width=300,
     )
