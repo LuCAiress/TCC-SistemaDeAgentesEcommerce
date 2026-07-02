@@ -1,6 +1,14 @@
 # Sistema de Análise de Dados com Agente Conversacional
 
-Sistema de análise de dados de negócios baseado em um agente conversacional capaz de interpretar perguntas em linguagem natural e convertê-las automaticamente em consultas SQL, retornando métricas e visualizações de forma estruturada. Desenvolvido como Trabalho de Conclusão de Curso em Engenharia de Computação no Centro Universitário de Brasília — CEUB.
+> **Projeto Destaque UniCeub 2026 — Categoria Tecnologia**
+
+Sistema de análise de dados de negócios baseado em um agente conversacional capaz de interpretar perguntas em linguagem natural e convertê-las automaticamente em consultas SQL, retornando métricas e visualizações interativas sobre dados de e-commerce.
+
+---
+
+## Reconhecimento
+
+Este projeto foi premiado na categoria **Tecnologia** do **Prêmio Destaque UniCeub 2026**, concedido pelo Centro Universitário de Brasília (CEUB) ao melhor Trabalho de Conclusão de Curso da área.
 
 ---
 
